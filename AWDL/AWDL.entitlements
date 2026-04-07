@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+    <!--
+        App Sandbox is DISABLED.
+
+        Reason: NSAppleScript with "with administrator privileges" is blocked
+        inside the sandbox. There is no sandboxed API for running `ifconfig`
+        as root, and SMJobBless (XPC helper) would add significant complexity.
+
+        Because sandbox is off, we do NOT need the mach-lookup temporary
+        exception for com.apple.gamecontrollerd — Darwin notify center works
+        without a Mach connection.
+    -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+
+    <!--
+        Hardened Runtime is still enabled (required for notarization).
+        The entitlements below relax only what is needed.
+    -->
+
+    <!-- Allow outgoing Apple Events (needed by NSAppleScript) -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+
+    <!-- User notifications -->
+    <key>com.apple.security.personal-information.location</key>
+    <false/>
+
+    <!--
+        SMAppService (Launch at Login) works without special entitlements
+        on macOS 13+ for non-sandboxed apps.
+    -->
+
+</dict>
+</plist>

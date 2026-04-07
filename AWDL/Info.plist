@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+    <!-- ── Identity ───────────────────────────────────────────────── -->
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
+    <key>CFBundleName</key>
+    <string>AWDL</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>AWDL</string>
+
+    <key>CFBundleVersion</key>
+    <string>1</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+
+    <!-- ── Entry point ─────────────────────────────────────────────── -->
+    <!-- Points AppKit directly at AppDelegate; no storyboard needed.  -->
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+
+    <!-- ── Hide from Dock and app switcher ────────────────────────── -->
+    <key>LSUIElement</key>
+    <true/>
+
+    <!-- ── Minimum OS ──────────────────────────────────────────────── -->
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+
+    <!-- ── Notifications usage string (required for UNUserNotifications) -->
+    <key>NSUserNotificationUsageDescription</key>
+    <string>AWDL notifies you when AWDL is enabled or disabled.</string>
+
+    <!-- ── No storyboard ───────────────────────────────────────────── -->
+    <!-- Xcode templates add NSMainStoryboardFile; omitting it means   -->
+    <!-- AppKit won't try to load a storyboard at launch.              -->
+
+</dict>
+</plist>
