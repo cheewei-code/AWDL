@@ -7,16 +7,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Components
 
-    private let awdlManager      = AWDLManager()
-    private let gameModeObserver = GameModeObserver()
+    private let awdlManager  = AWDLManager()
+    private let appObserver  = AppObserver()
 
     // MARK: - Menu bar
 
     private var statusItem: NSStatusItem!
 
-    // Tracks whether the last AWDL-off event was caused by Game Mode (not the user).
+    // Tracks whether the last AWDL-off event was triggered by a watched app (not the user).
     // Not persisted — resets on relaunch; that's intentional.
-    private var gameModeDidDisableAWDL = false
+    private var appDidDisableAWDL = false
 
     // MARK: - App lifecycle
 
@@ -25,13 +25,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupStatusItem()
         wireCallbacks()
-        gameModeObserver.start()
+        appObserver.start()
         updateMenuBar()
         ensurePrivilegedAccess()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        gameModeObserver.stop()
+        appObserver.stop()
     }
 
     // MARK: - Privileged access
@@ -70,64 +70,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async { self?.updateMenuBar() }
         }
 
-        gameModeObserver.onGameModeChange = { [weak self] isActive in
+        appObserver.onAppActiveChange = { [weak self] isActive in
             guard let self else { return }
             if isActive {
-                self.handleGameModeActivated()
+                self.handleWatchedAppLaunched()
             } else {
-                self.handleGameModeDeactivated()
+                self.handleWatchedAppQuit()
             }
             self.updateMenuBar()
         }
     }
 
-    // MARK: - Game Mode logic
+    // MARK: - Watched app logic
 
-    private func handleGameModeActivated() {
+    private func handleWatchedAppLaunched() {
         guard awdlManager.autoManageGameMode else { return }
 
-        // Only disable if AWDL is currently on
         if awdlManager.isAWDLActive() {
-            gameModeDidDisableAWDL = true
-            // Do NOT set userManuallyDisabledAWDL — this is automated
+            appDidDisableAWDL = true
             awdlManager.disableAWDL(isManual: false)
             NotificationManager.shared.send(
                 title: "AWDL Disabled",
-                body: "Game Mode activated — AWDL has been turned off."
+                body: "GeForce NOW opened — AWDL has been turned off."
             )
         }
     }
 
-    private func handleGameModeDeactivated() {
+    private func handleWatchedAppQuit() {
         guard awdlManager.autoManageGameMode else {
-            gameModeDidDisableAWDL = false
+            appDidDisableAWDL = false
             return
         }
 
         // Re-enable only if we were the ones who turned it off, and the user
         // didn't also manually disable it in the interim.
-        if gameModeDidDisableAWDL && !awdlManager.userManuallyDisabledAWDL {
-            gameModeDidDisableAWDL = false
+        if appDidDisableAWDL && !awdlManager.userManuallyDisabledAWDL {
+            appDidDisableAWDL = false
             awdlManager.enableAWDL(isManual: false)
             NotificationManager.shared.send(
                 title: "AWDL Re-enabled",
-                body: "Game Mode ended — AWDL has been turned back on."
+                body: "GeForce NOW closed — AWDL has been turned back on."
             )
         } else {
-            gameModeDidDisableAWDL = false
+            appDidDisableAWDL = false
         }
     }
 
     // MARK: - Menu bar title
 
     private func updateMenuBar() {
-        let isActive   = awdlManager.isAWDLActive()
-        let isGameMode = gameModeObserver.isGameModeActive
+        let isActive    = awdlManager.isAWDLActive()
+        let isAppActive = appObserver.isAppActive
 
         let title: String
         if isActive {
             title = "AWDL ●"
-        } else if isGameMode && awdlManager.autoManageGameMode {
+        } else if isAppActive && awdlManager.autoManageGameMode {
             title = "AWDL ○ 🎮"
         } else {
             title = "AWDL ○"
@@ -142,12 +140,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
-        let isActive   = awdlManager.isAWDLActive()
-        let isGameMode = gameModeObserver.isGameModeActive
+        let isActive    = awdlManager.isAWDLActive()
+        let isAppActive = appObserver.isAppActive
 
         // --- Status labels (non-clickable) ---
         menu.addItem(infoItem("Status: \(isActive ? "Active" : "Inactive")"))
-        menu.addItem(infoItem("Game Mode: \(isGameMode ? "On" : "Off")"))
+        menu.addItem(infoItem("GeForce NOW: \(isAppActive ? "Running" : "Not running")"))
         menu.addItem(.separator())
 
         // --- Toggle action ---
@@ -159,7 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
 
         // --- Auto-manage toggle ---
-        let autoItem = makeItem("Auto-manage with Game Mode", action: #selector(toggleAutoManage))
+        let autoItem = makeItem("Auto-manage with GeForce NOW", action: #selector(toggleAutoManage))
         autoItem.state = awdlManager.autoManageGameMode ? .on : .off
         menu.addItem(autoItem)
 
