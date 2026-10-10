@@ -7,16 +7,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Components
 
-    private let awdlManager  = AWDLManager()
-    private let appObserver  = AppObserver()
+    private let awdlManager = AWDLManager()
 
     // MARK: - Menu bar
 
     private var statusItem: NSStatusItem!
-
-    // Tracks whether the last AWDL-off event was triggered by a watched app (not the user).
-    // Not persisted — resets on relaunch; that's intentional.
-    private var appDidDisableAWDL = false
 
     // MARK: - App lifecycle
 
@@ -25,13 +20,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupStatusItem()
         wireCallbacks()
-        appObserver.start()
         updateMenuBar()
+        awdlManager.startMonitoring()
         ensurePrivilegedAccess()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        appObserver.stop()
+        awdlManager.stopMonitoring()
     }
 
     // MARK: - Privileged access
@@ -69,69 +64,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         awdlManager.onStateChange = { [weak self] in
             DispatchQueue.main.async { self?.updateMenuBar() }
         }
-
-        appObserver.onAppActiveChange = { [weak self] isActive in
-            guard let self else { return }
-            if isActive {
-                self.handleWatchedAppLaunched()
-            } else {
-                self.handleWatchedAppQuit()
-            }
-            self.updateMenuBar()
-        }
-    }
-
-    // MARK: - Watched app logic
-
-    private func handleWatchedAppLaunched() {
-        guard awdlManager.autoManageGameMode else { return }
-
-        if awdlManager.isAWDLActive() {
-            appDidDisableAWDL = true
-            awdlManager.disableAWDL(isManual: false)
-            NotificationManager.shared.send(
-                title: "AWDL Disabled",
-                body: "GeForce NOW opened — AWDL has been turned off."
-            )
-        }
-    }
-
-    private func handleWatchedAppQuit() {
-        guard awdlManager.autoManageGameMode else {
-            appDidDisableAWDL = false
-            return
-        }
-
-        // Re-enable only if we were the ones who turned it off, and the user
-        // didn't also manually disable it in the interim.
-        if appDidDisableAWDL && !awdlManager.userManuallyDisabledAWDL {
-            appDidDisableAWDL = false
-            awdlManager.enableAWDL(isManual: false)
-            NotificationManager.shared.send(
-                title: "AWDL Re-enabled",
-                body: "GeForce NOW closed — AWDL has been turned back on."
-            )
-        } else {
-            appDidDisableAWDL = false
-        }
     }
 
     // MARK: - Menu bar title
 
     private func updateMenuBar() {
-        let isActive    = awdlManager.isAWDLActive()
-        let isAppActive = appObserver.isAppActive
-
-        let title: String
-        if isActive {
-            title = "AWDL ●"
-        } else if isAppActive && awdlManager.autoManageGameMode {
-            title = "AWDL ○ 🎮"
-        } else {
-            title = "AWDL ○"
-        }
-
-        statusItem.button?.title = title
+        statusItem.button?.title = awdlManager.isAWDLActive() ? "AWDL ●" : "AWDL ○"
     }
 
     // MARK: - Menu construction
@@ -140,12 +78,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
-        let isActive    = awdlManager.isAWDLActive()
-        let isAppActive = appObserver.isAppActive
+        let isActive = awdlManager.isAWDLActive()
 
-        // --- Status labels (non-clickable) ---
-        menu.addItem(infoItem("Status: \(isActive ? "Active" : "Inactive")"))
-        menu.addItem(infoItem("GeForce NOW: \(isAppActive ? "Running" : "Not running")"))
+        // --- Status label (non-clickable) ---
+        let status: String
+        if isActive {
+            status = "Active"
+        } else if awdlManager.userManuallyDisabledAWDL {
+            status = "Inactive (kept off)"
+        } else {
+            status = "Inactive"
+        }
+        menu.addItem(infoItem("Status: \(status)"))
         menu.addItem(.separator())
 
         // --- Toggle action ---
@@ -155,11 +99,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(makeItem("Enable AWDL",  action: #selector(toggleAWDL), tag: 1))
         }
         menu.addItem(.separator())
-
-        // --- Auto-manage toggle ---
-        let autoItem = makeItem("Auto-manage with GeForce NOW", action: #selector(toggleAutoManage))
-        autoItem.state = awdlManager.autoManageGameMode ? .on : .off
-        menu.addItem(autoItem)
 
         // --- Launch at Login ---
         let loginItem = makeItem("Launch at Login", action: #selector(toggleLaunchAtLogin))
@@ -197,21 +136,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let enabling = sender.tag == 1   // tag 1 = "Enable AWDL"
 
         if enabling {
-            awdlManager.enableAWDL(isManual: true)
-            NotificationManager.shared.send(title: "AWDL Enabled", body: "AWDL turned on manually.")
+            awdlManager.enableAWDL { success in
+                guard success else { return }
+                NotificationManager.shared.send(title: "AWDL Enabled", body: "AWDL turned on.")
+            }
         } else {
-            awdlManager.disableAWDL(isManual: true)
-            NotificationManager.shared.send(title: "AWDL Disabled", body: "AWDL turned off manually.")
+            awdlManager.disableAWDL { success in
+                guard success else { return }
+                NotificationManager.shared.send(
+                    title: "AWDL Disabled",
+                    body: "AWDL turned off. It will be kept off until you enable it again."
+                )
+            }
         }
     }
 
     @objc private func quit() {
         NSApp.terminate(nil)
-    }
-
-    @objc private func toggleAutoManage() {
-        awdlManager.autoManageGameMode.toggle()
-        updateMenuBar()
     }
 
     // MARK: - Launch at Login (SMAppService, macOS 13+)

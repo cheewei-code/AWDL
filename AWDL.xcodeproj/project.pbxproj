@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		A1000001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000001 /* AppDelegate.swift */; };
 		A1000002 /* AWDLManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000002 /* AWDLManager.swift */; };
-		A1000003 /* AppObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000003 /* AppObserver.swift */; };
 		A1000004 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000004 /* NotificationManager.swift */; };
 		A1000005 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000007 /* main.swift */; };
 /* End PBXBuildFile section */
@@ -18,7 +17,6 @@
 		A2000000 /* AWDL.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AWDL.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2000001 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A2000002 /* AWDLManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AWDLManager.swift; sourceTree = "<group>"; };
-		A2000003 /* AppObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppObserver.swift; sourceTree = "<group>"; };
 		A2000004 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		A2000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A2000006 /* AWDL.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AWDL.entitlements; sourceTree = "<group>"; };
@@ -40,7 +38,6 @@
 				A2000007 /* main.swift */,
 				A2000001 /* AppDelegate.swift */,
 				A2000002 /* AWDLManager.swift */,
-				A2000003 /* AppObserver.swift */,
 				A2000004 /* NotificationManager.swift */,
 				A2000005 /* Info.plist */,
 				A2000006 /* AWDL.entitlements */,
@@ -117,7 +114,6 @@
 				A1000005 /* main.swift in Sources */,
 				A1000001 /* AppDelegate.swift in Sources */,
 				A1000002 /* AWDLManager.swift in Sources */,
-				A1000003 /* AppObserver.swift in Sources */,
 				A1000004 /* NotificationManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

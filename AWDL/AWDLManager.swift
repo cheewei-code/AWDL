@@ -6,6 +6,7 @@ import AppKit
 //   • Reading current AWDL state via `ifconfig awdl0`
 //   • Enabling/disabling AWDL via NSAppleScript with administrator privileges
 //   • Persisting user intent flags in UserDefaults
+//   • Keeping AWDL off while the user wants it off (macOS re-enables it on its own)
 
 final class AWDLManager {
 
@@ -13,34 +14,21 @@ final class AWDLManager {
 
     private enum Keys {
         static let userManuallyDisabledAWDL = "userManuallyDisabledAWDL"
-        static let autoManageGameMode       = "autoManageGameMode"
     }
 
     // MARK: Stored state
 
     /// True if the user explicitly turned AWDL off via the menu.
-    /// Not set when Game Mode disables AWDL automatically.
+    /// While true, the monitor turns AWDL back off whenever macOS brings it up.
     var userManuallyDisabledAWDL: Bool {
         get { UserDefaults.standard.bool(forKey: Keys.userManuallyDisabledAWDL) }
         set { UserDefaults.standard.set(newValue, forKey: Keys.userManuallyDisabledAWDL) }
     }
 
-    /// Whether AWDL should be automatically managed when Game Mode changes state.
-    /// Defaults to true on first launch.
-    var autoManageGameMode: Bool {
-        get {
-            // Default to true if key has never been written
-            if UserDefaults.standard.object(forKey: Keys.autoManageGameMode) == nil {
-                return true
-            }
-            return UserDefaults.standard.bool(forKey: Keys.autoManageGameMode)
-        }
-        set { UserDefaults.standard.set(newValue, forKey: Keys.autoManageGameMode) }
-    }
-
     // MARK: Callback
 
     /// Called after any AWDL state change (successful or not) so the menu bar can refresh.
+    /// May be called from a background queue.
     var onStateChange: (() -> Void)?
 
     // MARK: - State reading
@@ -62,34 +50,84 @@ final class AWDLManager {
 
     // MARK: - AWDL control
 
-    /// Enables AWDL. Runs `ifconfig awdl0 up` with admin privileges via AppleScript.
-    /// - Parameter isManual: If true, clears the userManuallyDisabledAWDL flag.
-    func enableAWDL(isManual: Bool = false) {
+    /// Enables AWDL. Runs `ifconfig awdl0 up` with admin privileges.
+    /// The completion handler is called on the main thread with the result.
+    func enableAWDL(completion: ((Bool) -> Void)? = nil) {
         guard awdlInterfaceExists() else {
             NSLog("AWDLManager: awdl0 interface not found, skipping enable")
+            completion?(false)
             return
         }
+        // Clear the flag before bringing the interface up so the monitor
+        // doesn't turn it straight back off.
+        userManuallyDisabledAWDL = false
         runPrivileged(command: "ifconfig awdl0 up") { [weak self] success in
-            if success && isManual {
-                self?.userManuallyDisabledAWDL = false
-            }
+            completion?(success)
             self?.onStateChange?()
         }
     }
 
-    /// Disables AWDL. Runs `ifconfig awdl0 down` with admin privileges via AppleScript.
-    /// - Parameter isManual: If true, sets userManuallyDisabledAWDL = true.
-    func disableAWDL(isManual: Bool = false) {
+    /// Disables AWDL. Runs `ifconfig awdl0 down` with admin privileges.
+    /// On success, AWDL is kept off until `enableAWDL` is called.
+    /// The completion handler is called on the main thread with the result.
+    func disableAWDL(completion: ((Bool) -> Void)? = nil) {
         guard awdlInterfaceExists() else {
             NSLog("AWDLManager: awdl0 interface not found, skipping disable")
+            completion?(false)
             return
         }
         runPrivileged(command: "ifconfig awdl0 down") { [weak self] success in
-            if success && isManual {
+            if success {
                 self?.userManuallyDisabledAWDL = true
             }
+            completion?(success)
             self?.onStateChange?()
         }
+    }
+
+    // MARK: - Monitoring
+
+    private let monitorInterval: TimeInterval = 2
+    private let monitorQueue = DispatchQueue(label: "com.awdl.AWDLToggle.monitor", qos: .utility)
+    private var monitorTimer: DispatchSourceTimer?
+    private var lastObservedActive: Bool?
+    private var enforcementFailed = false
+
+    /// Starts polling AWDL state. macOS brings awdl0 back up on its own (AirDrop,
+    /// AirPlay, Handoff…), so while userManuallyDisabledAWDL is set the monitor
+    /// turns it off again. Also fires onStateChange when the state changes externally.
+    func startMonitoring() {
+        guard monitorTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: monitorQueue)
+        timer.schedule(deadline: .now(), repeating: monitorInterval, leeway: .milliseconds(500))
+        timer.setEventHandler { [weak self] in self?.monitorTick() }
+        timer.resume()
+        monitorTimer = timer
+    }
+
+    func stopMonitoring() {
+        monitorTimer?.cancel()
+        monitorTimer = nil
+    }
+
+    private func monitorTick() {
+        var active = isAWDLActive()
+
+        if active && userManuallyDisabledAWDL {
+            // sudo -n only: never show a password dialog from the background.
+            if runSudo("ifconfig awdl0 down") {
+                NSLog("AWDLManager: AWDL came back up, turned it off again")
+                enforcementFailed = false
+                active = isAWDLActive()
+            } else if !enforcementFailed {
+                NSLog("AWDLManager: cannot keep AWDL off — passwordless sudo rule missing")
+                enforcementFailed = true
+            }
+        }
+
+        guard active != lastObservedActive else { return }
+        lastObservedActive = active
+        onStateChange?()
     }
 
     // MARK: - One-time privileged setup
@@ -141,16 +179,21 @@ final class AWDLManager {
     private func runPrivileged(command: String, completion: @escaping (Bool) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            let output = self.shell("sudo -n \(command) 2>&1")
-            let success = output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            if success {
+            if self.runSudo(command) {
                 DispatchQueue.main.async { completion(true) }
             } else {
                 // Sudoers rule not yet installed — fall back to AppleScript prompt
-                NSLog("AWDLManager: sudo -n failed (%@), falling back to AppleScript", output)
+                NSLog("AWDLManager: sudo -n failed, falling back to AppleScript")
                 self.runPrivilegedViaAppleScript(command: command, completion: completion)
             }
         }
+    }
+
+    /// Runs a command via `sudo -n`. Returns false if sudo would need a password
+    /// or the command printed an error.
+    private func runSudo(_ command: String) -> Bool {
+        let output = shell("sudo -n \(command) 2>&1")
+        return output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// Last-resort AppleScript escalation (shows password dialog).
